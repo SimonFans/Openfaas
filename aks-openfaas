@@ -1,0 +1,71 @@
+Deploy functions (openfaas) on AKS cluster
+
+1. create an aks cluster and run get credential command to get the kubeconfig to local.
+2. add the openfaas helm chart repo
+helm repo add openfaas https://openfaas.github.io/faas-netes/
+helm repo update
+3. As a good practice, OpenFaaS and OpenFaaS functions should be stored in their own Kubernetes namespace.
+kubectl apply -f https://raw.githubusercontent.com/openfaas/faas-netes/master/namespaces.yml
+```
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openfaas
+  annotations:
+    linkerd.io/inject: enabled
+    config.linkerd.io/skip-inbound-ports: "4222"
+    config.linkerd.io/skip-outbound-ports: "4222"
+  labels:
+    role: openfaas-system
+    access: openfaas-system
+    istio-injection: enabled
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openfaas-fn
+  annotations:
+    linkerd.io/inject: enabled
+    config.linkerd.io/skip-inbound-ports: "4222"
+    config.linkerd.io/skip-outbound-ports: "4222"
+  labels:
+    istio-injection: enabled
+    role: openfaas-fn
+```
+4. Generate a password for the OpenFaaS UI Portal and REST API using the following commands. 
+The helm chart uses this password to enable basic authentication on the OpenFaaS Gateway, which is exposed to the Internet through a cloud LoadBalancer.
+# generate a random password
+PASSWORD=$(head -c 12 /dev/urandom | shasum| cut -d' ' -f1)
+
+kubectl -n openfaas create secret generic basic-auth \
+--from-literal=basic-auth-user=admin \
+--from-literal=basic-auth-password="$PASSWORD"
+
+5. Deploy OpenFaaS into your AKS cluster using the helm upgrade command.
+helm upgrade openfaas --install openfaas/openfaas \
+    --namespace openfaas  \
+    --set basic_auth=true \
+    --set functionNamespace=openfaas-fn \
+    --set serviceType=LoadBalancer
+
+6. A public IP address is created for accessing the OpenFaaS gateway. Get the IP address using the kubectl get service command.
+kubectl get service -l component=gateway --namespace openfaas
+
+7. Test the OpenFaaS system by browsing to the external IP address on port 8080, http://<public IP>:8080 where you're prompted to log in. 
+The default user is admin and your password can be retrieved using echo $PASSWORD.
+# decrypt the password
+kubectl get secret basic-auth -n openfaas -o jsonpath='{.data.basic-auth-password}' | base64 --decode
+
+
+
+
+
+
+
+
+
+Reference:
+1. Auto-scaling [https://github.com/openfaas/workshop/blob/master/lab9.md]
+2. Auto-scaling parameters intro [https://docs.openfaas.com/architecture/autoscaling/]
+3. Openfaas repo [https://github.com/openfaas]
+4. AKS-Openfaas [https://learn.microsoft.com/en-us/azure/aks/openfaas]
